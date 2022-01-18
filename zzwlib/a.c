@@ -7,3 +7,7 @@ int add(int a, int b){
     return add_local(a,b);
 }
 
+
+int mul(int a, int b){
+    return a*b;
+}

@@ -5,4 +5,7 @@ ZZWLIB_1.1{
         *;
 };
 
-
+ZZWLIB_1.2{
+    global:
+        mul;
+} ZZWLIB_1.1;
