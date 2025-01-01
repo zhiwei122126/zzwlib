@@ -238,18 +238,26 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    auto fb = create_drm_fb(drm_handle.get(), connector->modes[0].hdisplay, connector->modes[0].vdisplay);
-    if (!fb) {
+    auto fb1 = create_drm_fb(drm_handle.get(), connector->modes[0].hdisplay, connector->modes[0].vdisplay);
+    if (!fb1) {
+        LOGE(main_logger, "can not create fb");
+        return -1;
+    }
+
+    auto fb2 = create_drm_fb(drm_handle.get(), connector->modes[0].hdisplay, connector->modes[0].vdisplay);
+    if (!fb2) {
         LOGE(main_logger, "can not create fb");
         return -1;
     }
 
     auto saved_crtc = drmModeGetCrtc(drm_handle.get(), encoder->crtc_id);
-
+    // 0 - draw on fb1, then show fb1;
+    // 1 - draw on fb2, then show fb2;
     for (int frame = 0; frame < 10; frame++) {
+        int fb_idx = frame % 2;
         // draw a red screen
-        for (int i = 0; i < fb->height; i++) {
-            for (int j = 0; j < fb->width; j++) {
+        for (int i = 0; i < fb1->height; i++) {
+            for (int j = 0; j < fb1->width; j++) {
                 uint8_t blue = 0xff;
                 uint8_t green = 0xff;
                 uint8_t red = 0xff;
@@ -267,7 +275,10 @@ int main(int argc, char **argv)
                     green = 0x00;
                     red = 0x00;
                 }
-
+                drm_fb_dev *fb = fb1.get();
+                if (fb_idx == 1) {
+                    fb = fb2.get();
+                }
                 fb->mapped_buf->data[i * fb->pitch + j * fb->bpp / 8 + 0] = blue; // blue
                 fb->mapped_buf->data[i * fb->pitch + j * fb->bpp / 8 + 1] = green; // green
                 fb->mapped_buf->data[i * fb->pitch + j * fb->bpp / 8 + 2] = red; // red
@@ -275,6 +286,10 @@ int main(int argc, char **argv)
             }
         }
         LOGI(main_logger, "set crtc");
+        drm_fb_dev *fb = fb1.get();
+        if (fb_idx == 1) {
+            fb = fb2.get();
+        }
         int ret = drmModeSetCrtc(drm_handle.get(), encoder->crtc_id, fb->buf_id, 0, 0, &connector->connector_id, 1, &connector->modes[0]);
         if (ret) {
             LOGE(main_logger, "can not set crtc");
