@@ -29,6 +29,13 @@ auto drmModeResDeletor = [](drmModeRes *res) {
     }
 };
 
+auto drmModePlaneResDeletor = [](drmModePlaneRes *res) {
+    if (res) {
+        LOGI(main_logger, "free plane res");
+        drmModeFreePlaneResources(res);
+    }
+};
+
 auto drmConnectorDeletor = [](drmModeConnector *connector) {
     if (connector) {
         LOGI(main_logger, "free connector");
@@ -90,6 +97,17 @@ unique_ptr<drmModeRes, decltype(drmModeResDeletor)> get_drm_resources(int drm_fd
     unique_ptr<drmModeRes, decltype(drmModeResDeletor)> res(drmModeGetResources(drm_fd), drmModeResDeletor);
     if (!res) {
         LOGE(main_logger, "can not get drm resources");
+    }
+    return res;
+}
+
+unique_ptr<drmModePlaneRes, decltype(drmModePlaneResDeletor)> get_drm_plane_resources(int drm_fd) {
+
+    drmSetClientCap(drm_fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1);
+
+    unique_ptr<drmModePlaneRes, decltype(drmModePlaneResDeletor)> res(drmModeGetPlaneResources(drm_fd), drmModePlaneResDeletor);
+    if (!res) {
+        LOGE(main_logger, "can not get drm plane resources");
     }
     return res;
 }
@@ -274,6 +292,12 @@ int main(int argc, char **argv)
         return -1;
     }
 
+    auto plane_res = get_drm_plane_resources(drm_handle.get());
+    if (!plane_res) {
+        LOGE(main_logger, "can not get drm plane resources");
+        return -1;
+    }
+
     auto connector = select_drm_connector(drm_handle.get(), *res);
     if (!connector) {
         LOGE(main_logger, "can not find connector");
@@ -307,7 +331,34 @@ int main(int argc, char **argv)
        .frame_count = 0,
     };
 
+    // black fb1 to screen.
+    drmModeSetCrtc(drm_handle.get(), encoder->crtc_id, fb1->buf_id, 0, 0, &connector->connector_id, 1, &connector->modes[0]);
+    sleep(3);
+
+    // change to white. still fb1
     memset(info.fb[0]->mapped_buf->data, 0xff, fb1->width * fb1->height * fb1->bpp / 8);
+    sleep(3);
+
+    // swap to fb2. black.
+    drmModePageFlip(drm_handle.get(), encoder->crtc_id, info.fb[1]->buf_id, DRM_MODE_PAGE_FLIP_EVENT, &info);
+    sleep(3);
+
+    auto crtc_x = 50;
+    auto crtc_y = 50;
+    auto crtc_w = 320;
+    auto crtc_h = 320;
+
+    auto src_x = 50;
+    auto src_y = 50;
+    auto src_w = 100;
+    auto src_h = 100;
+    // white fb1 to rect of black screen
+    drmModeSetPlane(drm_handle.get(), plane_res->planes[0], encoder->crtc_id, fb1->buf_id, 0,
+                    crtc_x, crtc_y, crtc_w, crtc_h,
+                    src_x << 16, src_y << 16, src_w << 16, src_h << 16);
+
+    sleep(3);
+
     drmModePageFlip(drm_handle.get(), encoder->crtc_id, info.fb[0]->buf_id, DRM_MODE_PAGE_FLIP_EVENT, &info);
 
     drmEventContext ev = {
