@@ -5,7 +5,7 @@ template<typename deletor>
 class unique_handle  {
 public:
     static const int INVALID_HANDLE_VALUE = -1;
-	unique_handle(int handle_, deletor del_) :
+    unique_handle(int handle_, deletor del_) :
             m_handle(handle_),
             m_deleter(del_) {
     }

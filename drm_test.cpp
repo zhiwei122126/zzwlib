@@ -62,13 +62,13 @@ struct drm_fb_dev {
     int drm_fd;
     int buf_id;
     // format info
-	uint32_t width = 0;
-	uint32_t height = 0;
-	uint8_t  depth = 0;
-	uint8_t  bpp = 0;
-	uint32_t pitch = 0;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint8_t  depth = 0;
+    uint8_t  bpp = 0;
+    uint32_t pitch = 0;
     // data area
-	unique_ptr<drm_mapped_buf, decltype(drmMappedBufDeletor)> mapped_buf
+    unique_ptr<drm_mapped_buf, decltype(drmMappedBufDeletor)> mapped_buf
              = unique_ptr<drm_mapped_buf, decltype(drmMappedBufDeletor)>(static_cast<drm_mapped_buf*>(nullptr), drmMappedBufDeletor);
     drm_fb_dev(int drm_fd_, int buf_id_) : drm_fd(drm_fd_), buf_id(buf_id_) {}
 };
@@ -131,7 +131,7 @@ unique_ptr<drm_fb_dev, decltype(drmModeFBDeletor)> create_drm_fb(int drm_fd, uin
         .width = width,
         .bpp = bpp,
     };
-	/* create dumb buffer */
+    /* create dumb buffer */
     ret = drmIoctl(drm_fd, DRM_IOCTL_MODE_CREATE_DUMB, &create_dumb);
     if (ret) {
         LOGE(main_logger, "can not create dumb buffer");
@@ -167,22 +167,22 @@ unique_ptr<drm_fb_dev, decltype(drmModeFBDeletor)> create_drm_fb(int drm_fd, uin
         return invalid_fb_ptr;
     }
 
-	/* perform actual memory mapping */
-	auto map = mmap(0, create_dumb.size, PROT_READ | PROT_WRITE, MAP_SHARED,
-		        drm_fd, map_dumb.offset);
-	if (map == MAP_FAILED) {
-		LOGE(main_logger, "cannot mmap dumb buffer, errno (%d)",errno);
-		return invalid_fb_ptr;
-	}
+    /* perform actual memory mapping */
+    auto map = mmap(0, create_dumb.size, PROT_READ | PROT_WRITE, MAP_SHARED,
+                drm_fd, map_dumb.offset);
+    if (map == MAP_FAILED) {
+        LOGE(main_logger, "cannot mmap dumb buffer, errno (%d)",errno);
+        return invalid_fb_ptr;
+    }
     // map will be released automatically
-	unique_ptr<drm_mapped_buf, decltype(drmMappedBufDeletor)> mapped_buf(new drm_mapped_buf((uint8_t*)map, create_dumb.size), drmMappedBufDeletor);
+    unique_ptr<drm_mapped_buf, decltype(drmMappedBufDeletor)> mapped_buf(new drm_mapped_buf((uint8_t*)map, create_dumb.size), drmMappedBufDeletor);
     if (!mapped_buf) {
         LOGE(main_logger, "can not create mapped buffer");
         return invalid_fb_ptr;
     }
     fb_ptr->mapped_buf.reset(mapped_buf.release());
 
-	/* clear the framebuffer to 0 */
+    /* clear the framebuffer to 0 */
     fb_ptr->width = width;
     fb_ptr->height = height;
     fb_ptr->depth = depth;
