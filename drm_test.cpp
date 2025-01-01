@@ -1,6 +1,7 @@
 
 #include <iostream>
 #include <memory>
+#include <cstring>
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -194,6 +195,53 @@ unique_ptr<drm_fb_dev, decltype(drmModeFBDeletor)> create_drm_fb(int drm_fd, uin
     return fb_ptr;
 }
 
+struct pageFlipInfo {
+    drm_fb_dev *fb[2];
+    int drm_fd;
+    int crtc_id;
+    uint32_t frame_count;
+};
+
+void page_flip_handler(int fd, uint32_t frame,
+        uint32_t sec, uint32_t usec,
+        void *data)
+{
+    LOGI(main_logger, "page flip handler, frame: %d", frame);
+
+    pageFlipInfo *info = (pageFlipInfo*)data;
+    info->frame_count++;
+    int fb_idx = info->frame_count % 2;
+    drm_fb_dev *fb = info->fb[fb_idx];
+
+    // draw a red screen
+    for (int i = 0; i < fb->height; i++) {
+        for (int j = 0; j < fb->width; j++) {
+            uint8_t blue = 0xff;
+            uint8_t green = 0xff;
+            uint8_t red = 0xff;
+            if (info->frame_count % 5 == 1) {
+                green = 0x00;
+                red = 0x00;
+            } else if (info->frame_count % 5 == 2) {
+                blue = 0x00;
+                red = 0x00;
+            } else if (info->frame_count % 5 == 3) {
+                blue = 0x00;
+                green = 0x00;
+            } else if (info->frame_count % 5 == 4) {
+                blue = 0x00;
+                green = 0x00;
+                red = 0x00;
+            }
+            fb->mapped_buf->data[i * fb->pitch + j * fb->bpp / 8 + 0] = blue; // blue
+            fb->mapped_buf->data[i * fb->pitch + j * fb->bpp / 8 + 1] = green; // green
+            fb->mapped_buf->data[i * fb->pitch + j * fb->bpp / 8 + 2] = red; // red
+            fb->mapped_buf->data[i * fb->pitch + j * fb->bpp / 8 + 3] = 0xff; // alpha
+        }
+    }
+    drmModePageFlip(info->drm_fd, info->crtc_id, fb->buf_id, DRM_MODE_PAGE_FLIP_EVENT, data);
+}
+
 int main(int argc, char **argv)
 {
     // unique_xxx objects will be released automatically
@@ -251,51 +299,26 @@ int main(int argc, char **argv)
     }
 
     auto saved_crtc = drmModeGetCrtc(drm_handle.get(), encoder->crtc_id);
+
+    pageFlipInfo info = {
+        .fb = {fb1.get(),fb2.get()},
+        .drm_fd = drm_handle.get(),
+        .crtc_id = encoder->crtc_id,
+       .frame_count = 0,
+    };
+
+    memset(info.fb[0]->mapped_buf->data, 0xff, fb1->width * fb1->height * fb1->bpp / 8);
+    drmModePageFlip(drm_handle.get(), encoder->crtc_id, info.fb[0]->buf_id, DRM_MODE_PAGE_FLIP_EVENT, &info);
+
+    drmEventContext ev = {
+        .version = DRM_EVENT_CONTEXT_VERSION,
+        .page_flip_handler = page_flip_handler,
+    };
     // 0 - draw on fb1, then show fb1;
     // 1 - draw on fb2, then show fb2;
     for (int frame = 0; frame < 10; frame++) {
-        int fb_idx = frame % 2;
-        // draw a red screen
-        for (int i = 0; i < fb1->height; i++) {
-            for (int j = 0; j < fb1->width; j++) {
-                uint8_t blue = 0xff;
-                uint8_t green = 0xff;
-                uint8_t red = 0xff;
-                if (frame % 5 == 1) {
-                    green = 0x00;
-                    red = 0x00;
-                } else if (frame % 5 == 2) {
-                    blue = 0x00;
-                    red = 0x00;
-                } else if (frame % 5 == 3) {
-                    blue = 0x00;
-                    green = 0x00;
-                } else if (frame % 5 == 4) {
-                    blue = 0x00;
-                    green = 0x00;
-                    red = 0x00;
-                }
-                drm_fb_dev *fb = fb1.get();
-                if (fb_idx == 1) {
-                    fb = fb2.get();
-                }
-                fb->mapped_buf->data[i * fb->pitch + j * fb->bpp / 8 + 0] = blue; // blue
-                fb->mapped_buf->data[i * fb->pitch + j * fb->bpp / 8 + 1] = green; // green
-                fb->mapped_buf->data[i * fb->pitch + j * fb->bpp / 8 + 2] = red; // red
-                fb->mapped_buf->data[i * fb->pitch + j * fb->bpp / 8 + 3] = 0xff; // alpha
-            }
-        }
-        LOGI(main_logger, "set crtc");
-        drm_fb_dev *fb = fb1.get();
-        if (fb_idx == 1) {
-            fb = fb2.get();
-        }
-        int ret = drmModeSetCrtc(drm_handle.get(), encoder->crtc_id, fb->buf_id, 0, 0, &connector->connector_id, 1, &connector->modes[0]);
-        if (ret) {
-            LOGE(main_logger, "can not set crtc");
-            return -1;
-        }
         sleep(3);
+        drmHandleEvent(drm_handle.get(), &ev);
     }
     // restore saved crtc
     LOGI(main_logger, "restore crtc");
