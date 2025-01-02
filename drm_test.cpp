@@ -217,6 +217,7 @@ struct pageFlipInfo {
     drm_fb_dev *fb[2];
     int drm_fd;
     int crtc_id;
+    int plane_id;
     uint32_t frame_count;
 };
 
@@ -230,6 +231,27 @@ void page_flip_handler(int fd, uint32_t frame,
     info->frame_count++;
     int fb_idx = info->frame_count % 2;
     drm_fb_dev *fb = info->fb[fb_idx];
+    int plane_id = info->plane_id;
+
+    auto crtc_1_x = 50;
+    auto crtc_1_y = 50;
+    auto crtc_1_w = 320;
+    auto crtc_1_h = 320;
+
+    auto src_1_x = 50;
+    auto src_1_y = 50;
+    auto src_1_w = 100;
+    auto src_1_h = 100;
+
+    auto crtc_2_x = 450;
+    auto crtc_2_y = 450;
+    auto crtc_2_w = 320;
+    auto crtc_2_h = 320;
+
+    auto src_2_x = 50;
+    auto src_2_y = 50;
+    auto src_2_w = 100;
+    auto src_2_h = 100;
 
     // draw a red screen
     for (int i = 0; i < fb->height; i++) {
@@ -257,7 +279,19 @@ void page_flip_handler(int fd, uint32_t frame,
             fb->mapped_buf->data[i * fb->pitch + j * fb->bpp / 8 + 3] = 0xff; // alpha
         }
     }
-    drmModePageFlip(info->drm_fd, info->crtc_id, fb->buf_id, DRM_MODE_PAGE_FLIP_EVENT, data);
+
+    if (0 == fb_idx) {
+        // fb1 through plane to crtc
+        drmModeSetPlane(drm_handle.get(), plane_id, encoder->crtc_id, fb->buf_id, 0,
+                        crtc_1_x, crtc_1_y, crtc_1_w, crtc_1_h,
+                        src_1_x << 16, src_1_y << 16, src_1_w << 16, src_1_h << 16);
+
+    } else {
+        // fb2 through plane to crtc
+        drmModeSetPlane(drm_handle.get(), plane_id, encoder->crtc_id, fb->buf_id, 0,
+                        crtc_2_x, crtc_2_y, crtc_2_w, crtc_2_h,
+                        src_2_x << 16, src_2_y << 16, src_2_w << 16, src_2_h << 16);
+    }
 }
 
 int main(int argc, char **argv)
@@ -328,7 +362,8 @@ int main(int argc, char **argv)
         .fb = {fb1.get(),fb2.get()},
         .drm_fd = drm_handle.get(),
         .crtc_id = encoder->crtc_id,
-       .frame_count = 0,
+        .plane_id = plane_res->planes[0],
+        .frame_count = 0,
     };
 
     // black fb1 to screen.
@@ -342,24 +377,6 @@ int main(int argc, char **argv)
     // swap to fb2. black.
     drmModePageFlip(drm_handle.get(), encoder->crtc_id, info.fb[1]->buf_id, DRM_MODE_PAGE_FLIP_EVENT, &info);
     sleep(3);
-
-    auto crtc_x = 50;
-    auto crtc_y = 50;
-    auto crtc_w = 320;
-    auto crtc_h = 320;
-
-    auto src_x = 50;
-    auto src_y = 50;
-    auto src_w = 100;
-    auto src_h = 100;
-    // white fb1 to rect of black screen
-    drmModeSetPlane(drm_handle.get(), plane_res->planes[0], encoder->crtc_id, fb1->buf_id, 0,
-                    crtc_x, crtc_y, crtc_w, crtc_h,
-                    src_x << 16, src_y << 16, src_w << 16, src_h << 16);
-
-    sleep(3);
-
-    drmModePageFlip(drm_handle.get(), encoder->crtc_id, info.fb[0]->buf_id, DRM_MODE_PAGE_FLIP_EVENT, &info);
 
     drmEventContext ev = {
         .version = DRM_EVENT_CONTEXT_VERSION,
