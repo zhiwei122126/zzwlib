@@ -109,6 +109,15 @@ unique_ptr<drmModePlaneRes, decltype(drmModePlaneResDeletor)> get_drm_plane_reso
     if (!res) {
         LOGE(main_logger, "can not get drm plane resources");
     }
+    LOGD(main_logger, "find plane count: %d", res->count_planes);
+    for (int i = 0; i < res->count_planes; i++) {
+        auto *plane = drmModeGetPlane(drm_fd, res->planes[i]);
+        if (plane->crtc_id == 73) {
+            LOGI(main_logger, "find plane %d: plane id: %d, crtc id: %d", i, res->planes[i], plane->crtc_id);
+        }
+        LOGD(main_logger, "plane %d: plane id: %d", i, res->planes[i]);
+        drmModeFreePlane(plane);
+    }
     return res;
 }
 
@@ -280,17 +289,24 @@ void page_flip_handler(int fd, uint32_t frame,
         }
     }
 
+    LOGI(main_logger, "drmModeSetPlane fb %d", fb_idx);
+    int ret = 0;
     if (0 == fb_idx) {
         // fb1 through plane to crtc
-        drmModeSetPlane(drm_handle.get(), plane_id, encoder->crtc_id, fb->buf_id, 0,
+        ret = drmModeSetPlane(info->drm_fd, plane_id, info->crtc_id, fb->buf_id, 0,
                         crtc_1_x, crtc_1_y, crtc_1_w, crtc_1_h,
                         src_1_x << 16, src_1_y << 16, src_1_w << 16, src_1_h << 16);
 
     } else {
         // fb2 through plane to crtc
-        drmModeSetPlane(drm_handle.get(), plane_id, encoder->crtc_id, fb->buf_id, 0,
+        ret = drmModeSetPlane(info->drm_fd, plane_id, info->crtc_id, fb->buf_id, 0,
                         crtc_2_x, crtc_2_y, crtc_2_w, crtc_2_h,
                         src_2_x << 16, src_2_y << 16, src_2_w << 16, src_2_h << 16);
+    }
+
+    LOGI(main_logger, "drmModeSetPlane fb %d", fb_idx);
+    if (ret) {
+        LOGE(main_logger, "can not set plane, ret %d", ret);
     }
 }
 
@@ -362,32 +378,42 @@ int main(int argc, char **argv)
         .fb = {fb1.get(),fb2.get()},
         .drm_fd = drm_handle.get(),
         .crtc_id = encoder->crtc_id,
-        .plane_id = plane_res->planes[0],
+        .plane_id = plane_res->planes[3],
         .frame_count = 0,
     };
 
     // black fb1 to screen.
-    drmModeSetCrtc(drm_handle.get(), encoder->crtc_id, fb1->buf_id, 0, 0, &connector->connector_id, 1, &connector->modes[0]);
+    LOGD(main_logger, "set crtc");
+    int ret = drmModeSetCrtc(drm_handle.get(), encoder->crtc_id, fb1->buf_id, 0, 0, &connector->connector_id, 1, &connector->modes[0]);
+    if (ret) {
+        LOGE(main_logger, "can not set crtc");
+        return -1;
+    }
     sleep(3);
 
     // change to white. still fb1
+    LOGD(main_logger, "set white");
     memset(info.fb[0]->mapped_buf->data, 0xff, fb1->width * fb1->height * fb1->bpp / 8);
     sleep(3);
 
-    // swap to fb2. black.
-    drmModePageFlip(drm_handle.get(), encoder->crtc_id, info.fb[1]->buf_id, DRM_MODE_PAGE_FLIP_EVENT, &info);
-    sleep(3);
-
-    drmEventContext ev = {
-        .version = DRM_EVENT_CONTEXT_VERSION,
-        .page_flip_handler = page_flip_handler,
-    };
+    // change to white. still fb1
+    LOGD(main_logger, "set plane");
+    ret = drmModeSetPlane(drm_handle.get(), plane_res->planes[3], encoder->crtc_id, fb1->buf_id, 0,
+                    50, 50, 100, 100,
+                    320 << 16, 320 << 16, 100 << 16, 100 << 16);
+    if (ret) {
+        LOGE(main_logger, "can not set plane, ret: %d", ret);
+        return -1;
+    }
+ 
+#if 1
     // 0 - draw on fb1, then show fb1;
     // 1 - draw on fb2, then show fb2;
     for (int frame = 0; frame < 10; frame++) {
         sleep(3);
-        drmHandleEvent(drm_handle.get(), &ev);
+        page_flip_handler(drm_handle.get(), frame, 0, 0, &info);
     }
+#endif
     // restore saved crtc
     LOGI(main_logger, "restore crtc");
     drmModeSetCrtc(drm_handle.get(), saved_crtc->crtc_id, saved_crtc->buffer_id, saved_crtc->x, saved_crtc->y, &connector->connector_id, 1, &saved_crtc->mode);
