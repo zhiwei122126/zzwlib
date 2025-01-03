@@ -11,6 +11,10 @@ public:
         error_code_(error_code),
         msg_(msg) {
     }
+    custom_exception(int error_code) :
+        error_code_(error_code),
+        msg_(nullptr) {
+    }
     // copy constructor and copy assignment with default
     custom_exception(const custom_exception&) = default;
     custom_exception& operator=(const custom_exception&) = default;
