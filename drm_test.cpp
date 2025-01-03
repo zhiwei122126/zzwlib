@@ -1,4 +1,6 @@
 
+//#define LOGGER_TIMESTAMP_ENABLE 1
+
 #include <iostream>
 #include <memory>
 #include <cstring>

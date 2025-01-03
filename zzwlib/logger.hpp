@@ -8,6 +8,10 @@
 #include <stdio.h>
 #include <string>
 
+#ifdef LOGGER_TIMESTAMP_ENABLE
+#include "time.hpp"
+#endif
+
 namespace zzwlib {
 
 enum class loglevel : int {
@@ -48,27 +52,33 @@ private:
 
 //========== default to use printf
 
+#ifdef LOGGER_TIMESTAMP_ENABLE
+#define TIMESTAMP_STR current_time_string().c_str()
+#else
+#define TIMESTAMP_STR ""
+#endif
+
 #define LOGE(logger, fmt_str, args...) do { \
     if (logger.get_loglevel() > zzwlib::loglevel::log_err_level) \
-        printf("[%s] %s : %d - " fmt_str "\n", logger.get_tag(), __FUNCTION__, __LINE__, ##args); \
+        printf("%s[%s] %s : %d - " fmt_str "\n", TIMESTAMP_STR, logger.get_tag(), __FUNCTION__, __LINE__, ##args); \
 } while(0)
 
 #define LOGW(logger, fmt_str, args...) do { \
     if (logger.get_loglevel() > zzwlib::loglevel::log_warn_level) \
-        printf("[%s] %s : %d - " fmt_str "\n",  logger.get_tag(), __FUNCTION__, __LINE__, ##args); \
+        printf("%s[%s] %s : %d - " fmt_str "\n",  TIMESTAMP_STR, logger.get_tag(), __FUNCTION__, __LINE__, ##args); \
 } while(0)
 
 #define LOGI(logger, fmt_str, args...) do { \
     if (logger.get_loglevel() > zzwlib::loglevel::log_info_level) \
-        printf("[%s] %s : %d - " fmt_str "\n",  logger.get_tag(), __FUNCTION__, __LINE__, ##args); \
+        printf("%s[%s] %s : %d - " fmt_str "\n",  TIMESTAMP_STR, logger.get_tag(), __FUNCTION__, __LINE__, ##args); \
 } while(0)
 
 #define LOGD(logger, fmt_str, args...) do { \
     if (logger.get_loglevel() > zzwlib::loglevel::log_dgb_level) \
-        printf("[%s] %s : %d - " fmt_str "\n",  logger.get_tag(), __FUNCTION__, __LINE__, ##args); \
+        printf("%s[%s] %s : %d - " fmt_str "\n",  TIMESTAMP_STR, logger.get_tag(), __FUNCTION__, __LINE__, ##args); \
 } while(0)
 
 #define LOGV(logger, fmt_str, args...) do { \
     if (logger.get_loglevel() > zzwlib::loglevel::log_verbose_level) \
-        printf("[%s] %s : %d - " fmt_str "\n",  logger.get_tag(), __FUNCTION__, __LINE__, ##args); \
+        printf("%s[%s] %s : %d - " fmt_str "\n",  TIMESTAMP_STR, logger.get_tag(), __FUNCTION__, __LINE__, ##args); \
 } while(0)
