@@ -17,11 +17,11 @@ namespace zzwlib {
             }
             return err;
         }
-        static std::string_view to_string(type err) noexcept {
-            int positive_err_code = to_positive(static_cast<int>(err));
+        static std::string_view to_string(int err) noexcept {
+            int positive_err_code = to_positive(err);
 
             if (positive_err_code < type::base_custom_error) {
-                return strerror(static_cast<int>(err));
+                return strerror(err);
             }
 
             switch (positive_err_code) {
