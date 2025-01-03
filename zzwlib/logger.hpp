@@ -3,6 +3,8 @@
 // per cpp has its own runtime loglevel and logtag
 //
 
+#pragma once
+
 #include <stdio.h>
 #include <string>
 

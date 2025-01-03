@@ -1,4 +1,6 @@
 
+#pragma once
+
 namespace zzwlib {
 
 template<typename deletor>
