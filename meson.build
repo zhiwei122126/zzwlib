@@ -11,7 +11,11 @@ drm = dependency(
     version: '>=2.4.120'
 )
 
-sources = files('drm_test.cpp')
+sources = files(
+    'drm_test.cpp',
+    'main.cpp'
+)
+
 local_incs = include_directories('zzwlib')
 
 executable(

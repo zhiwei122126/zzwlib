@@ -4,7 +4,7 @@
 namespace zzwlib {
 
 template<typename deletor>
-class unique_handle  {
+class unique_handle final {
 public:
     static const int INVALID_HANDLE_VALUE = -1;
     unique_handle(int handle_, deletor del_) :

@@ -17,6 +17,7 @@
 using namespace zzwlib;
 using namespace std;
 
+namespace {
 static logger main_logger("drm_test", loglevel::log_verbose_level);
 
 auto fd_deletor = [](int fd) {
@@ -312,7 +313,7 @@ void page_flip_handler(int fd, uint32_t frame,
     }
 }
 
-int main(int argc, char **argv)
+int drm_test_internal()
 {
     // unique_xxx objects will be released automatically
     // and they will be released in reverse order of their creation
@@ -408,16 +409,19 @@ int main(int argc, char **argv)
         return -1;
     }
  
-#if 1
-    // 0 - draw on fb1, then show fb1;
-    // 1 - draw on fb2, then show fb2;
     for (int frame = 0; frame < 10; frame++) {
         sleep(3);
         page_flip_handler(drm_handle.get(), frame, 0, 0, &info);
     }
-#endif
+
     // restore saved crtc
     LOGI(main_logger, "restore crtc");
     drmModeSetCrtc(drm_handle.get(), saved_crtc->crtc_id, saved_crtc->buffer_id, saved_crtc->x, saved_crtc->y, &connector->connector_id, 1, &saved_crtc->mode);
     return 0;
+}
+
+} // end anonymous namespace
+
+int drm_test() {
+    return drm_test_internal();
 }
