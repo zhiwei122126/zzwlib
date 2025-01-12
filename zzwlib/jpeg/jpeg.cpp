@@ -369,152 +369,87 @@ class HuffmanTree
         NodePtr m_root;
 };
 
-
-
-// Alias for a 8x8 pixel block with integral values for its channels
-typedef std::array<std::array<std::array<int, 8>, 8>, 3> CompMatrices;
-
-// Alias for a 8x8 matrix with integral elements
-typedef std::array< std::array< int, 8 >, 8 > Matrix8x8;
-
-class MCU final {
-public:
-    static int m_MCUCount;
-    static std::vector<std::vector<uint16_t>> m_QTables;
-
-public:
+struct MCU {
     MCU() = default;
 
-    MCU(const std::array<std::vector<int>, 3>& compRLE,
-        const std::vector<std::vector<uint16_t>>& QTables) {
-            constructMCU(compRLE, QTables);
+    MCU(const std::vector<int>& compRLE,
+        const std::vector<uint16_t>& QTable,
+        int &dc_sum) {
+            constructMCU(compRLE, QTable, dc_sum);
     }
 
-    void constructMCU(const std::array<std::vector<int>, 3>& compRLE,
-                        const std::vector<std::vector<uint16_t>>& QTables) {
+    void constructMCU(const std::vector<int>& compRLE,
+                      const std::vector<uint16_t>& QTable, int &dc_sum) {
 
-        //m_QTables = QTables;
-
-        m_MCUCount++;
-        m_order = m_MCUCount;
-
-        LOGD(jpeg_logger, "constructMCU, m_order: %d", m_order);
-
-        const char* component[] = { "Y (Luminance)", "Cb (Chrominance)", "Cr (Chrominance)" };
-        const char* type[] = { "DC", "AC" };    
+        LOGD(jpeg_logger, "constructMCU, index: %d", m_index);
     
-        for (int comp = 0; comp < 3; comp++) {
-            LOGD(jpeg_logger, "constructMCU, component: %s", component[comp]);
-            // initialize the zzorder with all zeros
-            std::array<int, 64> zzorder;
-            std::fill(zzorder.begin(), zzorder.end(), 0);
-            int j = -1;
+        // initialize the zzorder with all zeros
+        std::array<int, 64> zzorder;
+        std::fill(zzorder.begin(), zzorder.end(), 0);
+        int j = -1;
 
-            // construct the zzorder array
-            for (int i = 0; i <= compRLE[comp].size() - 2; i += 2) {
-                if (compRLE[comp][i] == 0 && compRLE[comp][i + 1] == 0) {
-                    break;
-                }
-                // skip the number of zeros
-                j = j + compRLE[comp][i] + 1;
-                zzorder[j] = compRLE[comp][i + 1];
+        // construct the zzorder array
+        for (int i = 0; i <= compRLE.size() - 2; i += 2) {
+            if (compRLE[i] == 0 && compRLE[i + 1] == 0) {
+                break;
             }
-            // DC_i = DC_i-1 + diff
-            m_DCDiff[comp] += zzorder[0];
-            zzorder[0] = m_DCDiff[comp];
-
-            int q_table_idx = (comp == 0)? 0: 1;
-
-            for (int i = 0; i < 64; i++) {
-                zzorder[i] *= m_QTables[q_table_idx][i];
-            }
-
-            // compute the zigzag order
-            for (int i = 0; i < 64; i++) {
-                auto [row, col] = zzOrderToMatIndices(i);
-                m_block[comp][row][col] = zzorder[i];
-            }
+            // skip the number of zeros
+            j = j + compRLE[i] + 1;
+            zzorder[j] = compRLE[i + 1];
         }
+
+        // DC_i = DC_i-1 + diff
+        zzorder[0] += dc_sum;
+        dc_sum = zzorder[0];
+
+        for (int i = 0; i < 64; i++) {
+            zzorder[i] *= QTable[i];
+        }
+
+        // compute the zigzag order
+        for (int i = 0; i < 64; i++) {
+            auto [row, col] = zzOrderToMatIndices(i);
+            m_dct_dst[row][col] = zzorder[i];
+        }
+        computeIDCT();
     }
 
-    const CompMatrices& getAllMatrices() const {
-        return m_block;
-    }
-private:
     void computeIDCT() {
-        for (int comp = 0; comp < 3; comp++) {
-            for (int y = 0; y < 8; y++) {
-                for (int x = 0; x < 8; x++) {
-                    float sum = 0.0f;
-                    for (int u = 0; u < 8; u++) {
-                        for (int v = 0; v < 8; v++) {
-                            float alpha = (u == 0) ? 1.0f / std::sqrt(2.0f) : 1.0f;
-                            float beta =  (v == 0) ? 1.0f / std::sqrt(2.0f) : 1.0f;
-                            sum += alpha * beta * m_block[comp][u][v] * std::cos((2 * x + 1) * u * M_PI / 16.0) * std::cos((2 * y + 1) * v * M_PI / 16.0);
-                        }
+        for (int y = 0; y < 8; y++) {
+            for (int x = 0; x < 8; x++) {
+                float sum = 0.0f;
+                for (int u = 0; u < 8; u++) {
+                    for (int v = 0; v < 8; v++) {
+                        float alpha = (u == 0) ? 1.0f / std::sqrt(2.0f) : 1.0f;
+                        float beta =  (v == 0) ? 1.0f / std::sqrt(2.0f) : 1.0f;
+                        sum += alpha * beta * m_dct_dst[u][v] * std::cos((2 * x + 1) * u * M_PI / 16.0) * std::cos((2 * y + 1) * v * M_PI / 16.0);
                     }
-                    m_IDCTCoeffs[comp][y][x] = sum / 4.0f;
                 }
-            }
-        }
-    }
-    void performLevelShift()
-    {
-        for (int comp = 0; comp < 3; comp++) {
-            for (int y = 0; y < 8; y++) {
-                for (int x = 0; x < 8; x++) {
-                    m_block[comp][y][x] = std::roundf(m_IDCTCoeffs[comp][y][x]) + 128;
-                }
+                m_dct_src[y][x] = std::roundf( sum / 4.0f) + 128;
             }
         }
     }
 
-private:
-    CompMatrices m_block;
-    int m_order;
-    static int m_DCDiff[3];
-    std::array<std::array<std::array<float,8>, 8>, 3> m_IDCTCoeffs;
+    std::array<std::array<uint8_t, 8>, 8> m_dct_src;
+    std::array<std::array<float, 8>, 8>  m_dct_dst;
+    int m_index;
 };
 
-int MCU::m_MCUCount = 0;
-// the quantization tables used for quantization
-std::vector<std::vector<uint16_t>> MCU::m_QTables = {};
-
-// the differences in DC consecutive coefficients per channel
-int MCU::m_DCDiff[3] = {0, 0, 0};
-
-
-
-const int JPGD_MAX_COMPONENTS = 4;
-const int JPGD_MAX_QUANT_TABLES = 2;
-const int JPGD_MAX_HUFF_TABLES = 2;
-const int JPGD_MAX_COMPS_IN_SCAN = 4;
 
 int m_image_x_size;
 int m_image_y_size;
-int m_comps_in_frame;                         // # of components in frame
-int m_comp_h_samp[JPGD_MAX_COMPONENTS];       // component's horizontal sampling factor
-int m_comp_v_samp[JPGD_MAX_COMPONENTS];       // component's vertical sampling factor
-int m_comp_quant[JPGD_MAX_COMPONENTS];        // component's quantization table selector
-int m_comp_ident[JPGD_MAX_COMPONENTS];        // component's ID
+int m_comps_in_frame;            // # of components in frame
+int m_comp_h_samp[4];       // component's horizontal sampling factor
+int m_comp_v_samp[4];       // component's vertical sampling factor
+int m_comp_quant[4];        // component's quantization table selector
+int m_comp_ident[4];        // component's ID
 
-int16_t m_quant_tbl[JPGD_MAX_QUANT_TABLES][64];
-int16_t *m_quant[JPGD_MAX_QUANT_TABLES] = { &m_quant_tbl[0][0], &m_quant_tbl[1][0]};
-
-uint8_t m_dc_huff_num_tbl[JPGD_MAX_HUFF_TABLES][17];
-uint8_t* m_dc_huff_num[JPGD_MAX_HUFF_TABLES] = { &m_dc_huff_num_tbl[0][0], &m_dc_huff_num_tbl[1][0]};
-
-uint8_t m_dc_huff_val_tbl[JPGD_MAX_HUFF_TABLES][256];
-uint8_t* m_dc_huff_val[JPGD_MAX_HUFF_TABLES] = { &m_dc_huff_val_tbl[0][0], &m_dc_huff_val_tbl[1][0]};
-
-uint8_t m_ac_huff_num_tbl[JPGD_MAX_HUFF_TABLES][17];
-uint8_t* m_ac_huff_num[JPGD_MAX_HUFF_TABLES] = { &m_ac_huff_num_tbl[0][0], &m_ac_huff_num_tbl[1][0]};
-
-uint8_t m_ac_huff_val_tbl[JPGD_MAX_HUFF_TABLES][256];
-uint8_t* m_ac_huff_val[JPGD_MAX_HUFF_TABLES] = { &m_ac_huff_val_tbl[0][0], &m_ac_huff_val_tbl[1][0]};
+std::vector<std::vector<uint16_t>> m_quant_tbl;
+HuffmanTable m_huffmanTable[2][2];
+HuffmanTree m_huffmanTree[2][2];
 
 int m_comps_in_scan;
-int m_scan_comp_to_frame_comp_idx[JPGD_MAX_COMPS_IN_SCAN];
+std::vector<uint8_t> m_scan_bytes;
 
 // return: 0 or positive, next marker pos.
 uint32_t next_marker(uint8_t *data, int len, int &pos) {
@@ -565,8 +500,12 @@ int dqt_marker(uint8_t *data, int len, int &marker_len)
     cur_pos += 1;
 
     LOGD(jpeg_logger, "table id %d, precision %d, table:", table_id, precision);
+
+    while (m_quant_tbl.size() <= table_id) {
+        m_quant_tbl.push_back(std::vector<uint16_t>());
+    }
     for (int i = 0; i < 64; i++) {
-        int16_t val = 0;
+        uint16_t val = 0;
         if (precision == 0) {
             val = data[cur_pos];
             cur_pos += 1;
@@ -577,7 +516,7 @@ int dqt_marker(uint8_t *data, int len, int &marker_len)
             LOGD(jpeg_logger, "invalid precision %d", precision);
         }
         LOGD(jpeg_logger, " 0x%x ", val);
-        m_quant[table_id][i] = val;
+        m_quant_tbl[table_id].push_back(val);
     }
 
     return 0;
@@ -611,32 +550,33 @@ int dht_marker(uint8_t *data, int len, int &marker_len)
     cur_pos += 1;
     LOGD(jpeg_logger, "table id %d, table type %d(%s), table:", table_id, table_type, table_type == 0 ? "DC" : "AC");
 
-    // default to ac
-    uint8_t *huff_num = m_dc_huff_num[table_id];
-    uint8_t *huff_val = m_dc_huff_val[table_id];
-
-    if (table_type == 1) {
-        // AC
-        huff_num = m_ac_huff_num[table_id];
-        huff_val = m_ac_huff_num[table_id];
-    }
-
-    huff_num[0] = 0;
     int count = 0;
 
     for (int i = 1; i <= 16; i++) {
-        huff_num[i] = data[cur_pos];
+        HuffmanRow row;
+        row.num = data[cur_pos];
         cur_pos += 1;
-        count += huff_num[i];
+        m_huffmanTable[table_type][table_id].push_back(row);
 
-        LOGD(jpeg_logger, " 0x%x ", huff_num[i], count);
+        count += row.num;
+        LOGD(jpeg_logger, " 0x%x ", row.num);
     }
-
+    int row_idx = 0;
     for (int i = 0; i < count; i++) {
-        huff_val[i] = data[cur_pos];
+        uint8_t code = data[cur_pos];
         cur_pos += 1;
-        LOGD(jpeg_logger, " 0x%x ", huff_val[i]);
+
+        while(m_huffmanTable[table_type][table_id][row_idx].num == 0) {
+            row_idx++;
+        }
+        m_huffmanTable[table_type][table_id][row_idx].val_list.push_back(code);
+        if (m_huffmanTable[table_type][table_id][row_idx].num == m_huffmanTable[table_type][table_id][row_idx].val_list.size())
+            row_idx++;
+
+        LOGD(jpeg_logger, " 0x%x ", code);
     }
+
+    m_huffmanTree[table_type][table_id].constructHuffmanTree(m_huffmanTable[table_type][table_id]);
 
     return 0;
 };
@@ -745,6 +685,27 @@ int sos_marker(uint8_t *data, int len, int &marker_len)
     return 0;
 }
 
+int scan_image_data(uint8_t *data, int len, int &data_len)
+{
+    int cur_pos = 0;
+    int left_bytes = len;
+
+    while(left_bytes > 0) {
+        if (data[cur_pos] == 0xff && data[cur_pos + 1] == 0x00) {
+            m_scan_bytes.push_back(0xff);
+            left_bytes -= 2;
+            cur_pos += 2;
+        } else if (data[cur_pos] == 0xff && data[cur_pos + 1] == 0xd9) {
+            data_len = cur_pos;
+            return 0;
+        } else {
+            m_scan_bytes.push_back(data[cur_pos]);
+            left_bytes -= 1;
+            cur_pos += 1;
+        }
+    }
+    return 0;
+}
 
 int decode(uint8_t *data, int len)
 {
@@ -791,6 +752,11 @@ int decode(uint8_t *data, int len)
                 sos_marker(data + cur_pos + marker_pre_offset, left_bytes, marker_len);
                 cur_pos += (marker_pre_offset + 2 + marker_len);
                 left_bytes -= (marker_pre_offset + 2 + marker_len);
+
+                int data_len = 0;
+                scan_image_data(data + cur_pos, left_bytes, data_len);
+                cur_pos += data_len;
+                left_bytes -= data_len;
             } break;
             default:
                 cur_pos += (marker_pre_offset + 2);
@@ -801,6 +767,15 @@ int decode(uint8_t *data, int len)
                 left_bytes -= app_len;
                 break;
         }
+    }
+
+    if (m_scan_bytes.size() == 0) {
+        LOGD(jpeg_logger, "scan bytes is empty");
+        return -1;
+    } else {
+        LOGD(jpeg_logger, "scan bytes size %d", m_scan_bytes.size());
+        // process scan data via huffman tree
+
     }
     return 0;
 }
