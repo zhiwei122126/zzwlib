@@ -64,7 +64,7 @@ namespace zzwlib {
 
 /*
  * ./bmp2yuv444.elf test.bmp test.227x198.yuv
- *  ffplay -f rawvideo -pixel_format yuv444p -video_size 227x198 test.227x198.yuv
+ *  ffplay -f rawvideo -pixel_format yuv444p -video_size 16x16 test.yuv
  *
 */
 int main(int argc, char** argv) {

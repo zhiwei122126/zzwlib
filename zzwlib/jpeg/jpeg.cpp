@@ -284,7 +284,6 @@ NodePtr same_level_right(NodePtr node)
     }
     // while loop ends when p->parent == nullptr
     if (p->parent == nullptr) {
-        LOGE(jpeg_logger, "same_level_right, node has no right sibling");
         return nullptr;
     }
     // while loop ends when p->parent->right != p; p is its parent's left child.
@@ -364,6 +363,31 @@ class HuffmanTree
             }
         }
         const NodePtr getTree() const { return m_root;}
+
+        // decode the huffman code,
+        // return the value if the code is valid,
+        // because 0x0000 and 0xffff are both values that are used in the
+        // normal range. so can not use a return type of int
+        // to represent the condition "code are not found in the tree".
+        // otherwise return ""
+        const std::string contains(const std::string &huffCode) {
+            //int i = 0;
+            NodePtr p_nd = m_root;
+            for (auto && c : huffCode) {
+                if (c == '0') {
+                    p_nd = p_nd->left;
+                } else {
+                    p_nd = p_nd->right;
+                }
+            }
+            if (p_nd == nullptr) {
+                return "";
+            }
+            if (p_nd->leaf) {
+                return std::to_string(p_nd->value);
+            }
+            return "";
+        }
 
     private:
         NodePtr m_root;
@@ -690,13 +714,17 @@ int scan_image_data(uint8_t *data, int len, int &data_len)
     int cur_pos = 0;
     int left_bytes = len;
 
+    data_len = 0;
+    LOGD(jpeg_logger, "scan_image_data, len %d", len);
     while(left_bytes > 0) {
         if (data[cur_pos] == 0xff && data[cur_pos + 1] == 0x00) {
             m_scan_bytes.push_back(0xff);
             left_bytes -= 2;
             cur_pos += 2;
+            LOGD(jpeg_logger, "find 0xff 0x00");
         } else if (data[cur_pos] == 0xff && data[cur_pos + 1] == 0xd9) {
             data_len = cur_pos;
+            LOGD(jpeg_logger, "find 0xff 0xd9, data_len %d", data_len);
             return 0;
         } else {
             m_scan_bytes.push_back(data[cur_pos]);
@@ -705,6 +733,49 @@ int scan_image_data(uint8_t *data, int len, int &data_len)
         }
     }
     return 0;
+}
+
+int decode_scan_data(std::vector<uint8_t> &scan_data)
+{
+    int cur_pos = 0;
+    int left_bytes = m_scan_bytes.size();
+    std::string bitsScanned = "";
+    int HuffTableID = 0;
+    int bit_k = 0;
+    auto get_bit = [&scan_data](int k) -> char {
+        int byte_idx = k / 8;
+        int bit_idx = k % 8;
+        return (scan_data[byte_idx] >> (7 - bit_idx)) & 0x01;
+    };
+
+    auto get_next_n_bits = [&scan_data, &get_bit](int k, int n) -> int16_t {
+        int16_t val = 0;
+        for (int i = 0; i < n; i++) {
+            val = (val << 1) | get_bit(k + i);
+        }
+        return val;
+    };
+    std::vector<int16_t> RLE;
+    while(1) {
+        bitsScanned += get_bit(bit_k);
+        auto value = m_huffmanTree[0][HuffTableID].contains(bitsScanned);
+        if (value != "") {
+            int zeroCount = uint8_t(std::stoi(value)) >> 4;
+            int category = uint8_t(std::stoi(value)) & 0x0f;
+
+            int dc_coeff = get_next_n_bits(bit_k + 1, category);
+            bit_k += 1 + category;
+
+            bitsScanned = "";
+
+            LOGD(jpeg_logger, "dc_coeff %d, zeroCount %d", dc_coeff, zeroCount);
+            RLE.push_back(zeroCount);
+            RLE.push_back(dc_coeff);
+            break;
+        } else {
+            bit_k += 1;
+        }
+ 
 }
 
 int decode(uint8_t *data, int len)
@@ -775,7 +846,7 @@ int decode(uint8_t *data, int len)
     } else {
         LOGD(jpeg_logger, "scan bytes size %d", m_scan_bytes.size());
         // process scan data via huffman tree
-
+        decode_scan_data(m_scan_bytes);
     }
     return 0;
 }
